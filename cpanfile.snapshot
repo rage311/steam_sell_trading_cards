@@ -27,21 +27,20 @@ DISTRIBUTIONS
     requirements:
       ExtUtils::MakeMaker 0
       perl 5.006002
+  Crypt-OpenSSL-RSA-0.28
+    pathname: P/PE/PERLER/Crypt-OpenSSL-RSA-0.28.tar.gz
+    provides:
+      Crypt::OpenSSL::RSA 0.28
+    requirements:
+      Crypt::OpenSSL::Random 0
+      ExtUtils::MakeMaker 0
+      Test 0
   Crypt-OpenSSL-Random-0.11
     pathname: R/RU/RURBAN/Crypt-OpenSSL-Random-0.11.tar.gz
     provides:
       Crypt::OpenSSL::Random 0.11
     requirements:
       ExtUtils::MakeMaker 0
-  Crypt-OpenSSL-RSA-0.28
-    pathname: P/PE/PERLER/Crypt-OpenSSL-RSA-0.28.tar.gz
-    provides:
-      Crypt::OpenSSL::RSA 0.28
-    requirements:
-      ExtUtils::MakeMaker 0
-      Crypt::OpenSSL::Random 0.11
-      Test 1.26
-      perl 5.006002
   Data-Printer-0.40
     pathname: G/GA/GARU/Data-Printer-0.40.tar.gz
     provides:
@@ -148,6 +147,23 @@ DISTRIBUTIONS
     requirements:
       ExtUtils::MakeMaker 0
       perl 5.006
+  IO-Socket-SSL-2.056
+    pathname: S/SU/SULLR/IO-Socket-SSL-2.056.tar.gz
+    provides:
+      IO::Socket::SSL 2.056
+      IO::Socket::SSL::Intercept 2.056
+      IO::Socket::SSL::OCSP_Cache 2.056
+      IO::Socket::SSL::OCSP_Resolver 2.056
+      IO::Socket::SSL::PublicSuffix undef
+      IO::Socket::SSL::SSL_Context 2.056
+      IO::Socket::SSL::SSL_HANDLE 2.056
+      IO::Socket::SSL::Session_Cache 2.056
+      IO::Socket::SSL::Utils 2.014
+    requirements:
+      ExtUtils::MakeMaker 0
+      Mozilla::CA 0
+      Net::SSLeay 1.46
+      Scalar::Util 0
   JSON-MaybeXS-1.003010
     pathname: H/HA/HAARG/JSON-MaybeXS-1.003010.tar.gz
     provides:
@@ -386,6 +402,24 @@ DISTRIBUTIONS
       Pod::Simple 3.09
       Time::Local 1.2
       perl 5.010001
+  Mozilla-CA-20180117
+    pathname: A/AB/ABH/Mozilla-CA-20180117.tar.gz
+    provides:
+      Mozilla::CA 20180117
+    requirements:
+      ExtUtils::MakeMaker 0
+      Test 0
+      perl 5.006
+  Net-SSLeay-1.85
+    pathname: M/MI/MIKEM/Net-SSLeay-1.85.tar.gz
+    provides:
+      Net::SSLeay 1.85
+      Net::SSLeay::Handle 0.61
+    requirements:
+      ExtUtils::MakeMaker 6.36
+      MIME::Base64 0
+      Test::More 0.60_01
+      perl 5.005
   Package-Stash-0.37
     pathname: D/DO/DOY/Package-Stash-0.37.tar.gz
     provides:
