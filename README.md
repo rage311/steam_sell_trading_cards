@@ -38,7 +38,15 @@ Install app dependencies
 
     $ carton install --cached
 (using --cached here mainly to work around Crypt::OpenSSL::RSA bug in v0.28 using OpenSSL v1.10+)
-    
+
+Create config
+
+    $ cat > config.yml <<EOF
+    username: YourSteamUserName
+    password: YourSteamPassword
+    id: YourSteamID
+    EOF
+
 Run it
 
     $ carton exec perl steam_trading.pl
