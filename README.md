@@ -26,15 +26,17 @@ Install plenv (https://github.com/tokuhirom/plenv)
     $ plenv install 5.26.1
 
     $ plenv rehash
+    $ plenv local 5.26.1
     $ plenv install-cpanm
     $ plenv rehash
-    $ plenv local 5.26.1
 
 Install carton (https://github.com/perl-carton/carton)
 
     $ cpanm Carton
     
 Install app dependencies
+
+You will need the OpenSSL header files -- available in Ubuntu as `libssl-dev`.
 
     $ carton install --cached
 (using --cached here mainly to work around Crypt::OpenSSL::RSA bug in v0.28 using OpenSSL v1.10+)
