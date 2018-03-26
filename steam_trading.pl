@@ -25,6 +25,7 @@ use constant {
 };
 
 
+
 die 'Invalid config' unless my $config = read_config();
 
 my $ua = Mojo::UserAgent->new->max_connections(0);
@@ -100,15 +101,13 @@ for my $asset (@tradable) {
   }
   elsif ($list_success == SELL_CONFIRMATION) {
     say '  requires confirmation';
+    $confirmation_needed |= 1;
   }
   elsif ($list_success == SELL_SUCCESS) {
     say '  successful';
   }
 
   print "\n";
-
-  $confirmation_needed |= 1 if
-    $list_success && $list_success == SELL_CONFIRMATION;
 }
 
 say "NOTE: These listings require confirmation before being listed on market\n"
