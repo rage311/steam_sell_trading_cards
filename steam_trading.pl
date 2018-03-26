@@ -14,6 +14,15 @@ use List::Util qw(first);
 use FindBin qw($RealBin);
 use YAML;
 
+use constant {
+  LOGIN_FAILURE     => undef,
+  LOGIN_TWOFACTOR   => 0,
+  LOGIN_SUCCESS     => 1,
+
+  SELL_FAILURE      => undef,
+  SELL_CONFIRMATION => 0,
+  SELL_SUCCESS      => 1,
+};
 
 
 die 'Invalid config' unless my $config = read_config();
@@ -21,29 +30,15 @@ die 'Invalid config' unless my $config = read_config();
 my $ua = Mojo::UserAgent->new->max_connections(0);
 
 die 'No session id' unless my $sessionid  = sessionid($ua);
-die 'No steam_rsa result' unless
-  my $rsa_params = steam_rsa($ua, $config->{username});
 
-die "Unable to encrypt password: $!" unless
-  my $pw_encrypted = rsa_encrypt(
-    $rsa_params->{mod},
-    $rsa_params->{exp},
-    $config->{password}
-  );
+die 'Unable to login' unless defined(my $login_result = login_steps(undef));
 
-# prompt for Steam two factor code
-print 'Two factor code: ';
-my $two_factor = <STDIN>;
-chomp $two_factor;
+until ($login_result == LOGIN_SUCCESS) {
+  $login_result = login_steps(twofactor_prompt()) if
+    $login_result == LOGIN_TWOFACTOR;
 
-die 'Unable to login' unless
-  steam_login(
-    $ua,
-    $config->{username},
-    $pw_encrypted,
-    $two_factor,
-    $rsa_params->{ts}
-  );
+  die 'Unable to login' unless defined $login_result;
+}
 
 die 'Unable to retrieve inventory' unless
   my $inventory = inventory($ua, $config->{id}, 753);
@@ -76,15 +71,12 @@ Mojo::Promise->all(@price_promises)->then(sub (@lowest_prices) {
   warn "Error getting lowest_price: $err_msg";
 })->wait;
 
-if ($ENV{DEBUG}) {
-  say 'Tradable:';
-  p @tradable;
-}
+say 'Tradable:' and p @tradable if $ENV{DEBUG};
 
 
 my $confirmation_needed;
 
-# selling fee is 15% (you receive ~86.96% of listed price)
+# selling fee is 15% (you receive ~87% of listed price)
 # sell "price" param is what you receive, not actual listed price
 for my $asset (@tradable) {
   my $sell_price = int(int($asset->{lowest_price} =~ s/[^\d]//gr) * 0.87);
@@ -103,15 +95,24 @@ for my $asset (@tradable) {
   print "Listing: $asset->{type} - $asset->{name} for ";
   printf "\$%.2f\n", $sell_price / 100;
 
-  say $list_success
-    ? '  Successful'
-    : '  FAILED';
+  if (! defined $list_success) {
+    say '  FAILED';
+  }
+  elsif ($list_success == SELL_CONFIRMATION) {
+    say '  requires confirmation';
+  }
+  elsif ($list_success == SELL_SUCCESS) {
+    say '  successful';
+  }
+
   print "\n";
 
-  #$confirmation_needed |= $result->{requires_confirmation};
+  $confirmation_needed |= 1 if
+    $list_success && $list_success == SELL_CONFIRMATION;
 }
 
-
+say "NOTE: These listings require confirmation before being listed on market\n"
+  if $confirmation_needed;
 
 
 
@@ -133,15 +134,13 @@ sub read_config {
 
 
 sub sessionid ($ua) {
-  $ua->get('https://steamcommunity.com/login/');
+  my $result = $ua->get('https://steamcommunity.com/login/')->result;
 
   return (
     first {
       $_->name eq 'sessionid'
     } $ua->cookie_jar->find(Mojo::URL->new('https://steamcommunity.com'))->@*
   )->value;
-
-  #return (first { $_->name eq 'sessionid' } $result->cookies->@*)->value;
 }
 
 
@@ -172,12 +171,12 @@ sub rsa_encrypt ($mod, $exp, $plaintext) {
 }
 
 
-sub steam_login ($ua, $username, $password, $two_factor, $rsa_ts) {
+sub steam_login ($ua, $username, $password_encrypted, $two_factor, $rsa_ts) {
   my $login = $ua->post(
     'https://steamcommunity.com/login/dologin/',
     form => {
       donotcache     => time * 1000,
-      password       => $password,
+      password       => $password_encrypted,
       username       => $username,
       twofactorcode  => $two_factor,
       rsatimestamp   => $rsa_ts,
@@ -187,7 +186,52 @@ sub steam_login ($ua, $username, $password, $two_factor, $rsa_ts) {
       emailsteamid   => '',
     })->result->json;
 
-  return $login->{success} && $login->{login_complete};
+  warn "$!" and return LOGIN_FAILURE unless $login;
+
+  if (!$login->{success}) {
+    # no message when requires_twofactor is true
+    say 'Requires two factor code' and return
+      LOGIN_TWOFACTOR if $login->{requires_twofactor};
+
+    say 'Login unsuccessful';
+    say $login->{message} if $login->{message};
+
+    return LOGIN_FAILURE;
+  }
+
+  return LOGIN_SUCCESS if $login->{login_complete};
+}
+
+
+sub login_steps ($twofactor) {
+  die 'No steam_rsa result' unless
+    my $rsa_params = steam_rsa($ua, $config->{username});
+
+  die "Unable to encrypt password: $!" unless
+    my $password_encrypted = rsa_encrypt(
+      $rsa_params->{mod},
+      $rsa_params->{exp},
+      $config->{password}
+    );
+
+  #die 'Unable to login' unless
+  return steam_login(
+    $ua,
+    $config->{username},
+    $password_encrypted,
+    $twofactor,
+    $rsa_params->{ts}
+  );
+}
+
+
+sub twofactor_prompt {
+  # prompt for Steam two factor code
+  print 'Two factor code: ';# (Ctrl+D if not required): ';
+  my $twofactor = <STDIN>;
+  # print "\n";
+  chomp $twofactor if defined $twofactor;
+  return $twofactor;
 }
 
 
@@ -266,10 +310,18 @@ sub list_asset ($ua, $username, $sessionid, $asset, $price_cents) {
       price     => $price_cents,
   })->result->json;
 
+  return undef unless $sell_result;
+
   p $sell_result if $ENV{DEBUG};
+
   say "Listing failed: $sell_result->{message}" if
     $sell_result && !$sell_result->{success};
 
-  return $sell_result && $sell_result->{success};
+  return !$sell_result->{success}
+    ? undef
+    : ($sell_result->{needs_email_confirmation}
+       || $sell_result->{needs_mobile_confirmation})
+      ? SELL_CONFIRMATION()
+      : SELL_SUCCESS();
 }
 
