@@ -3,7 +3,11 @@ Script to automate selling your Steam trading cards for the current going rate
 
 ## Steps:
 
-Clone repo
+Install the package dependencies (on Ubuntu):
+
+    $ apt-get install libssl-dev build-essential
+
+Clone repo:
 
     $ git clone https://github.com/rage311/steam_sell_trading_cards.git
     $ cd steam_sell_trading_cards
@@ -33,12 +37,6 @@ Install plenv (https://github.com/tokuhirom/plenv).  This step is optional if yo
 Install carton (https://github.com/perl-carton/carton)
 
     $ cpanm Carton
-    
-Install the OpenSSL header files -- available in Ubuntu as `libssl-dev`.  On Arch Linux, the header files are already included in the `openssl` package.
-
-On Ubuntu:
-
-    $ apt-get install libssl-dev
     
 Install Perl modules from the repo's cache:
 
