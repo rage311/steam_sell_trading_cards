@@ -48,9 +48,9 @@ Create config
     $ cat > config.yml <<EOF
     username: YourSteamUserName
     password: YourSteamPassword
-    id: YourSteamID
+    id: YourSteamID64
     EOF
-(You can find your Steam ID by searching for your username here: https://steamid.io/lookup)
+(You can find your "Steam ID 64" by searching for your username here: https://steamid.io/lookup)
 
 Run it
 
