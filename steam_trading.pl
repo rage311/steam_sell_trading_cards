@@ -32,7 +32,7 @@ my $ua = Mojo::UserAgent->new->max_connections(0);
 
 die 'No session id' unless my $sessionid  = sessionid($ua);
 
-die 'Unable to login' unless defined(my $login_result = login_steps(undef));
+die 'Unable to login' unless defined(my $login_result = login_steps());
 
 until ($login_result == LOGIN_SUCCESS) {
   $login_result = login_steps(twofactor_prompt()) if
@@ -63,10 +63,7 @@ push @price_promises, lowest_price($ua, $uniq_tradable{$_}, $_)
   for keys %uniq_tradable;
 
 Mojo::Promise->all(@price_promises)->then(sub (@lowest_prices) {
-  my %lowest_hash = map {
-    $_->[0] => $_->[1]
-  } @lowest_prices;
-
+  my %lowest_hash = map { $_->[0] => $_->[1] } @lowest_prices;
   $_->{lowest_price} = $lowest_hash{$_->{market_hash_name}} for @tradable;
 })->catch(sub ($err_msg) {
   warn "Error getting lowest_price: $err_msg";
@@ -74,44 +71,57 @@ Mojo::Promise->all(@price_promises)->then(sub (@lowest_prices) {
 
 say 'Tradable:' and p @tradable if $ENV{DEBUG};
 
+printf "Listing with adjustment of \$ %+.2f\n", $config->{price_adjust} / 100;
 
 my $confirmation_needed;
+my ($total_gross_cents, $total_net_cents) = (0, 0);
 
 # selling fee is 15% (you receive ~87% of listed price)
 # sell "price" param is what you receive, not actual listed price
 for my $asset (@tradable) {
-  my $sell_price = int(int($asset->{lowest_price} =~ s/[^\d]//gr) * 0.87);
+  (my $gross_price_cents = $asset->{lowest_price}) =~ s/[^\d]//g;
+  $gross_price_cents += $config->{price_adjust};
+  my $net_price_cents = int($gross_price_cents * 0.87);
 
   warn "$asset->{market_hash_name} sell price would be 0" and next unless
-    $sell_price > 0;
+    $net_price_cents > 0;
 
   my $list_success = list_asset(
     $ua,
     $config->{username},
     $sessionid,
     $asset,
-    $sell_price
+    $net_price_cents,
   );
 
-  print "Listing: $asset->{type} - $asset->{name} for ";
-  printf "\$%.2f\n", $sell_price / 100;
+  print "\nListing: $asset->{type} - $asset->{name}\n";
+  printf "  \$%.2f (\$%.2f)\n",
+    $gross_price_cents / 100,
+    $net_price_cents   / 100;
 
-  if (! defined $list_success) {
+  if (defined $list_success) {
+    if ($list_success == SELL_CONFIRMATION) {
+      say '  Requires Confirmation';
+      $confirmation_needed |= 1;
+    }
+    elsif ($list_success == SELL_SUCCESS) {
+      say '  Successful';
+    }
+
+    $total_gross_cents += $gross_price_cents;
+    $total_net_cents   += $net_price_cents;
+  }
+  else {
     say '  FAILED';
   }
-  elsif ($list_success == SELL_CONFIRMATION) {
-    say '  requires confirmation';
-    $confirmation_needed |= 1;
-  }
-  elsif ($list_success == SELL_SUCCESS) {
-    say '  successful';
-  }
-
-  print "\n";
 }
 
-say "NOTE: These listings require confirmation before being listed on market\n"
+say "\nNOTE: These listings require confirmation before being listed on market\n"
   if $confirmation_needed;
+
+printf "Total listings: \$%.2f (\$%.2f)\n",
+  $total_gross_cents / 100,
+  $total_net_cents   / 100;
 
 
 
@@ -127,6 +137,9 @@ sub read_config {
       && $config->{username}
       && $config->{password}
       && $config->{id};
+
+  die if defined $config->{price_adjust} && $config->{price_adjust} !~ /-?\d+/;
+  $config->{price_adjust} //= 0;
 
   return $config;
 }
@@ -202,7 +215,7 @@ sub steam_login ($ua, $username, $password_encrypted, $two_factor, $rsa_ts) {
 }
 
 
-sub login_steps ($twofactor) {
+sub login_steps ($twofactor = undef) {
   die 'No steam_rsa result' unless
     my $rsa_params = steam_rsa($ua, $config->{username});
 
