@@ -28,7 +28,7 @@ use constant {
 
 die 'Invalid config' unless my $config = read_config();
 
-my $ua = Mojo::UserAgent->new->max_connections(0);
+my $ua = Mojo::UserAgent->new->max_connections(0)->connect_timeout(15);
 
 die 'No session id' unless my $sessionid  = sessionid($ua);
 
@@ -44,7 +44,7 @@ until ($login_result == LOGIN_SUCCESS) {
 die 'Unable to retrieve inventory' unless
   my $inventory = inventory($ua, $config->{id}, 753);
 
-die 'Nothing to sell' unless
+die 'No Steam items to sell' unless
   $inventory->{total_inventory_count} > 0 && $inventory->{assets};
 
 say "Inventory count: $inventory->{total_inventory_count}";
@@ -86,7 +86,7 @@ for my $asset (@tradable) {
   warn "$asset->{market_hash_name} sell price would be 0" and next unless
     $net_price_cents > 0;
 
-  my $list_success = list_asset(
+  my ($list_success, $message) = list_asset(
     $ua,
     $config->{username},
     $sessionid,
@@ -112,14 +112,14 @@ for my $asset (@tradable) {
     $total_net_cents   += $net_price_cents;
   }
   else {
-    say '  FAILED';
+    say "  FAILED: $message";
   }
 }
 
-say "\nNOTE: These listings require confirmation before being listed on market\n"
+say "\nNOTE: These listings require confirmation before being listed on market"
   if $confirmation_needed;
 
-printf "Total listings: \$%.2f (\$%.2f)\n",
+printf "\nTotal listings: \$%.2f (\$%.2f)\n",
   $total_gross_cents / 100,
   $total_net_cents   / 100;
 
@@ -200,10 +200,10 @@ sub steam_login ($ua, $username, $password_encrypted, $two_factor, $rsa_ts) {
 
   warn "$!" and return LOGIN_FAILURE unless $login;
 
-  if (!$login->{success}) {
+  if (! $login->{success}) {
     # no message when requires_twofactor is true
-    say 'Requires two factor code' and return
-      LOGIN_TWOFACTOR if $login->{requires_twofactor};
+    #say 'Requires two factor code' and return
+    return LOGIN_TWOFACTOR if $login->{requires_twofactor};
 
     say 'Login unsuccessful';
     say $login->{message} if $login->{message};
@@ -326,11 +326,8 @@ sub list_asset ($ua, $username, $sessionid, $asset, $price_cents) {
 
   p $sell_result if $ENV{DEBUG};
 
-  say "Listing failed: $sell_result->{message}" if
-    $sell_result && !$sell_result->{success};
-
-  return !$sell_result->{success}
-    ? undef
+  return ! $sell_result->{success}
+    ? (undef, $sell_result->{message})
     : ($sell_result->{needs_email_confirmation}
        || $sell_result->{needs_mobile_confirmation})
       ? SELL_CONFIRMATION()
