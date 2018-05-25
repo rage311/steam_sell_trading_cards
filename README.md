@@ -3,7 +3,11 @@ Script to automate selling your Steam trading cards for the current going rate
 
 ## Steps:
 
-Clone repo
+Install the package dependencies (on Ubuntu):
+
+    $ apt-get install libssl-dev build-essential
+
+Clone repo:
 
     $ git clone https://github.com/rage311/steam_sell_trading_cards.git
     $ cd steam_sell_trading_cards
@@ -34,12 +38,6 @@ Install carton (https://github.com/perl-carton/carton)
 
     $ cpanm Carton
     
-Install the OpenSSL header files -- available in Ubuntu as `libssl-dev`.  On Arch Linux, the header files are already included in the `openssl` package.
-
-On Ubuntu:
-
-    $ apt-get install libssl-dev
-    
 Install Perl modules from the repo's cache:
 
     $ carton install --cached
@@ -50,9 +48,9 @@ Create config
     $ cat > config.yml <<EOF
     username: YourSteamUserName
     password: YourSteamPassword
-    id: YourSteamID
+    id: YourSteamID64
     EOF
-(You can find your Steam ID by searching for your username here: https://steamid.io/lookup)
+(You can find your "Steam ID 64" by searching for your username here: https://steamid.io/lookup)
 
 Run it
 
