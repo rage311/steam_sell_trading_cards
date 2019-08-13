@@ -32,7 +32,7 @@ getopt(
   'h|help'     => sub { print extract_usage() and exit; },
 );
 
-$debug ||= $debug;
+$debug ||= $ENV{DEBUG};
 
 if ($debug) {
   say 'CLI Options:';

@@ -5,7 +5,7 @@ Script to automate selling your Steam trading cards for the current going rate
 
 Install the package dependencies (on Ubuntu):
 
-    $ apt-get install libssl-dev build-essential
+    $ sudo apt-get install libssl-dev build-essential zlib1g-dev
 
 Clone repo:
 
