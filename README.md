@@ -37,7 +37,7 @@ Install plenv (https://github.com/tokuhirom/plenv).  This step is optional if yo
 Install carton (https://github.com/perl-carton/carton)
 
     $ cpanm Carton
-    
+
 Install Perl modules from the repo's cache:
 
     $ carton install --cached
@@ -49,9 +49,24 @@ Create config
     username: YourSteamUserName
     password: YourSteamPassword
     id: YourSteamID64
+    adjust: 0
     EOF
+
 (You can find your "Steam ID 64" by searching for your username here: https://steamid.io/lookup)
+Modify the `adjust` value to increase or decrease your card listing price in cents.
+
 
 Run it
 
     $ carton exec perl steam_trading.pl
+
+### Usage
+
+    Usage: steam_trading.pl [OPTIONS]
+
+    Options:
+      -a, --adjust <value>   Adjust listing price (default 0)
+      -n, --dry-run          Dry run without listing anything for sale
+      -d, --debug            Output additional debugging messages
+      -h, --help             Print this help message
+

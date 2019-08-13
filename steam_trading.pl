@@ -3,11 +3,9 @@
 use 5.026;
 
 use Mojo::Base -strict, -signatures;
-use Mojo::JSON::MaybeXS;
 use Mojo::UserAgent;
 use Mojo::Promise;
-use DDP { class => { expand => 'all' } };
-use Mojo::Util qw(b64_encode);
+use Mojo::Util qw(b64_encode dumper getopt extract_usage);
 use Crypt::OpenSSL::RSA;
 use Crypt::OpenSSL::Bignum;
 use List::Util qw(first);
@@ -25,8 +23,28 @@ use constant {
 };
 
 
+binmode STDOUT, ':encoding(UTF-8)';
+
+getopt(
+  'a|adjust=i' => \my $adjust,
+  'n|dry-run'  => \my $dry_run,
+  'd|debug'    => \my $debug,
+  'h|help'     => sub { print extract_usage() and exit; },
+);
+
+$debug ||= $debug;
+
+if ($debug) {
+  say 'CLI Options:';
+  say "  adjust:  ", $adjust  // 0;
+  say "  dry-run: ", $dry_run // 0;
+  say "  debug:   ", $debug   // 0;
+}
 
 die 'Invalid config' unless my $config = read_config();
+
+$config->{price_adjust} = $adjust if defined $adjust;
+say dumper $config if $debug;
 
 my $ua = Mojo::UserAgent->new->max_connections(0)->connect_timeout(15);
 
@@ -49,18 +67,24 @@ die 'No Steam items to sell' unless
 
 say "Inventory count: $inventory->{total_inventory_count}";
 
-my @tradable = tradable($inventory->{assets}, $inventory->{descriptions});
+if ($debug) {
+  say $_->{type} for $inventory->{descriptions}->@*;
+}
 
-my %uniq_tradable;
-%uniq_tradable = map {
-    ! exists $uniq_tradable{$_->{market_hash_name}}
-      ? ($_->{market_hash_name} => $_->{appid})
-      : ()
-  } @tradable;
+die 'No tradable items' unless
+  my @tradable = tradable($inventory->{assets}, $inventory->{descriptions});
 
-my @price_promises;
-push @price_promises, lowest_price($ua, $uniq_tradable{$_}, $_)
-  for keys %uniq_tradable;
+say dumper @tradable if $debug;
+
+my %uniq_tradable = map { $_->{market_hash_name} => $_->{appid} } @tradable;
+
+say dumper %uniq_tradable if $debug;
+
+my @price_promises = map {
+  lowest_price($ua, $uniq_tradable{$_}, $_)
+} keys %uniq_tradable;
+
+say dumper @price_promises if $debug;
 
 Mojo::Promise->all(@price_promises)->then(sub (@lowest_prices) {
   my %lowest_hash = map { $_->[0] => $_->[1] } @lowest_prices;
@@ -69,22 +93,39 @@ Mojo::Promise->all(@price_promises)->then(sub (@lowest_prices) {
   warn "Error getting lowest_price: $err_msg";
 })->wait;
 
-say 'Tradable:' and p @tradable if $ENV{DEBUG};
+say 'Tradable:', dumper @tradable if $debug;
 
 printf "Listing with adjustment of \$ %+.2f\n", $config->{price_adjust} / 100;
 
 my $confirmation_needed;
 my ($total_gross_cents, $total_net_cents) = (0, 0);
 
+# bc .08/2
+# .04000000000000000000
+# bc .175/2
+# .08750000000000000000
+
 # selling fee is 15% (you receive ~87% of listed price)
 # sell "price" param is what you receive, not actual listed price
 for my $asset (@tradable) {
   (my $gross_price_cents = $asset->{lowest_price}) =~ s/[^\d]//g;
   $gross_price_cents += $config->{price_adjust};
-  my $net_price_cents = int($gross_price_cents * 0.87);
 
-  warn "$asset->{market_hash_name} sell price would be 0" and next unless
-    $net_price_cents > 0;
+  my $net_price_cents = $gross_price_cents - int($gross_price_cents * 0.87) <= 2
+    ? $gross_price_cents - 2
+    : int($gross_price_cents * 0.87) + 1;
+
+  unless ($net_price_cents > 0) {
+    say $asset->{market_hash_name}, ' net price would\'ve been $0.00,',
+      ' increasing to $0.01';
+    $net_price_cents = 1;
+  }
+
+  if ($debug) {
+    say dumper $asset;
+    say "Gross c: ", $gross_price_cents;
+    say "Net c:   ", $net_price_cents;
+  }
 
   my ($list_success, $message) = list_asset(
     $ua,
@@ -92,17 +133,18 @@ for my $asset (@tradable) {
     $sessionid,
     $asset,
     $net_price_cents,
+    $dry_run,
   );
 
   print "\nListing: $asset->{type} - $asset->{name}\n";
-  printf "  \$%.2f (\$%.2f)\n",
+  printf "  ~\$%.2f (\$%.2f)\n",
     $gross_price_cents / 100,
     $net_price_cents   / 100;
 
   if (defined $list_success) {
     if ($list_success == SELL_CONFIRMATION) {
       say '  Requires Confirmation';
-      $confirmation_needed |= 1;
+      $confirmation_needed++;
     }
     elsif ($list_success == SELL_SUCCESS) {
       say '  Successful';
@@ -119,7 +161,7 @@ for my $asset (@tradable) {
 say "\nNOTE: These listings require confirmation before being listed on market"
   if $confirmation_needed;
 
-printf "\nTotal listings: \$%.2f (\$%.2f)\n",
+printf "\nTotal listings: ~\$%.2f (\$%.2f)\n",
   $total_gross_cents / 100,
   $total_net_cents   / 100;
 
@@ -131,14 +173,15 @@ printf "\nTotal listings: \$%.2f (\$%.2f)\n",
 sub read_config {
   my $config = YAML::LoadFile("$RealBin/config.yml") or die "$!";
 
-  warn 'username, password, and id are required in config.yml' and return undef
+  warn 'username, password, and id are required in config.yml' and return
     unless $config
       && ref $config eq 'HASH'
       && $config->{username}
       && $config->{password}
       && $config->{id};
 
-  die if defined $config->{price_adjust} && $config->{price_adjust} !~ /-?\d+/;
+  die "Invalid price_adjust value in config: $config->{price_adjust}" if
+    defined $config->{price_adjust} && $config->{price_adjust} !~ /^-?\s*\d+$/;
   $config->{price_adjust} //= 0;
 
   return $config;
@@ -200,9 +243,8 @@ sub steam_login ($ua, $username, $password_encrypted, $two_factor, $rsa_ts) {
 
   warn "$!" and return LOGIN_FAILURE unless $login;
 
-  if (! $login->{success}) {
+  if (!$login->{success}) {
     # no message when requires_twofactor is true
-    #say 'Requires two factor code' and return
     return LOGIN_TWOFACTOR if $login->{requires_twofactor};
 
     say 'Login unsuccessful';
@@ -226,7 +268,6 @@ sub login_steps ($twofactor = undef) {
       $config->{password}
     );
 
-  #die 'Unable to login' unless
   return steam_login(
     $ua,
     $config->{username},
@@ -239,9 +280,8 @@ sub login_steps ($twofactor = undef) {
 
 sub twofactor_prompt {
   # prompt for Steam two factor code
-  print 'Two factor code: ';# (Ctrl+D if not required): ';
+  print 'Two factor code (case insensitive): ';
   my $twofactor = <STDIN>;
-  # print "\n";
   chomp $twofactor if defined $twofactor;
   return $twofactor;
 }
@@ -267,7 +307,7 @@ sub tradable ($assets, $descriptions) {
   for my $asset (@$assets) {
     my $desc_match = first {
       $_->{tradable}
-      && index($_->{type}, 'Trading Card') > -1
+      #&& index($_->{type}, 'Trading Card') > -1
       && $_->{classid} == $asset->{classid}
     } $inventory->{descriptions}->@*;
 
@@ -308,7 +348,9 @@ sub lowest_price ($ua, $appid, $market_hash_name) {
 
 
 # $asset->{qw(appid contextid asset)} required
-sub list_asset ($ua, $username, $sessionid, $asset, $price_cents) {
+sub list_asset ($ua, $username, $sessionid, $asset, $price_cents, $dry_run) {
+  return (undef, 'DRY_RUN') if $dry_run;
+
   # these requests have to be non-concurrent, otherwise Steam gives an error
   my $sell_result = $ua->post(
     'https://steamcommunity.com/market/sellitem/',
@@ -322,15 +364,30 @@ sub list_asset ($ua, $username, $sessionid, $asset, $price_cents) {
       price     => $price_cents,
   })->result->json;
 
-  return undef unless $sell_result;
+  return unless $sell_result;
 
-  p $sell_result if $ENV{DEBUG};
+  say dumper $sell_result if $debug;
 
-  return ! $sell_result->{success}
-    ? (undef, $sell_result->{message})
-    : ($sell_result->{needs_email_confirmation}
-       || $sell_result->{needs_mobile_confirmation})
+  return $sell_result->{success}
+    ? $sell_result->{needs_email_confirmation}
+        || $sell_result->{needs_mobile_confirmation}
       ? SELL_CONFIRMATION()
-      : SELL_SUCCESS();
+      : SELL_SUCCESS()
+    : (undef, $sell_result->{message} // '');
 }
+
+
+__END__
+
+=head1 SYNOPSIS
+
+  Usage: steam_trading.pl [OPTIONS]
+
+  Options:
+    -a, --adjust <value>   Adjust listing price (default 0)
+    -n, --dry-run          Dry run without listing anything for sale
+    -d, --debug            Output additional debugging messages
+    -h, --help             Print this help message
+
+=cut
 
