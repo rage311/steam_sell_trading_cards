@@ -53,6 +53,7 @@ Create config
     EOF
 
 (You can find your "Steam ID 64" by searching for your username here: https://steamid.io/lookup)
+
 Modify the `adjust` value to increase or decrease your card listing price in cents.
 
 
